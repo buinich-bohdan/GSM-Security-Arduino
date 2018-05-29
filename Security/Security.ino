@@ -12,7 +12,7 @@ SoftwareSerial SIM800(8, 9); // RX, TX
 
 unsigned long lastUpdate = 0; // Время последнего обновления
 long updatePeriod = 90000; // Проверять каждых 90 сек
-
+int check = 0;
 int sensor1 = 0;
 int flag1 = 0;
 
@@ -21,8 +21,8 @@ bool executingTask = false; // Флаг исполнения отложенно�
 float balance = 0.0; // Переменная для хранения данных о балансе SIM-карты
 
 String stat_sec = "Snyato s ohrani!";
-String phones = "+380XXXXXXXXX"; // Белый список телефонов
-String n = "+380XXXXXXXXX";
+String phones = "+380965666929,+380502705537"; // Белый список телефонов
+String n = "+380502705537";
 char smsDv[] = "Wnimaniye! Dvijeniye na objekte!";
 
 void setup() {
@@ -78,6 +78,7 @@ String waitResponse() {                           // Функция ожидан
 
 bool hasmsg = false; // Флаг наличия сообщений к удалению
 void loop() {
+
   String _buffer = "";                            // Переменная хранения ответов от GSM-модуля
   if (millis() > lastUpdate && !executingTask) {  // Цикл автоматической проверки SMS, повторяется каждые updatePeriod (90 сек)
     do {
@@ -85,6 +86,7 @@ void loop() {
       if (_buffer.indexOf("+CMGL: ") > -1) {                      // Если есть хоть одно, получаем его индекс
         int msgIndex = _buffer.substring(_buffer.indexOf("+CMGL: ") + 7, _buffer.indexOf("\"REC UNREAD\"", _buffer.indexOf("+CMGL: "))).toInt();
         char i = 0;                                               // Объявляем счетчик попыток
+        check = 0;
         do {
           i++;                                                    // Увеличиваем счетчик
           _buffer = sendATCommand("AT+CMGR=" + (String)msgIndex + ",1", true);  // Пробуем получить текст SMS по индексу
@@ -119,7 +121,7 @@ void loop() {
     } while (1);
   }
   if (millis() > lastUpdate + 180000 && executingTask) { // Таймаут на выполнение задачи - 3 минуты
-    //DEBUG_PRINTLN("ExTask-true!");
+    // DEBUG_PRINTLN("ExTask-true!");
     sendATCommand("\n", true);
     executingTask = false; // Если флаг не был сброшен по исполению задачи, сбрасываем его принудительно через 3 минуты
   }
@@ -156,10 +158,22 @@ void loop() {
     } else if (msg.startsWith("RING")) { // При входящем вызове
       sendATCommand("ATH", true); // Всегда сбрасываем
     } else if (msg.startsWith("+CMTI:")) { // Незапрашиваемый ответ - приход сообщения
+      if (msg.startsWith("+CMTI: \"SM\",2")) { //если висит 2 сообщения удаляем первое
+        sendATCommand("AT+CMGD=1,0", false); // Удаляем первое сообщение
+      }
       lastUpdate = millis(); // Сбрасываем таймер автопроверки наличия сообщений
     } else if (msg.startsWith("ERROR")) { // Ошибка исполнения команды
       DEBUG_PRINTLN("Error executing last command.");
       executingTask = false; // Сбрасываем флаг исполнения, но задачу не удаляем - на повторное исполнение
+      check++;
+      //DEBUG_PRINTLN(check);
+      if (check == 10) {
+        executingTask = true;
+        check = 0;
+        deleteFirstTask();
+        deleteFirstTask();
+        //sendATCommand("AT+CMGDA=\"DEL ALL\"", true); // Удаляем все сообщения, чтобы не забивали память МК
+      }
     }
   }
 
@@ -212,9 +226,10 @@ void getActionBySMS(String msg) { // Парсим SMS
       //addTask("getBalance"); // Добавляем задачу о запросе баланса
       showAllTasks(); // Выводим все задачи
     } else if (msgbody.startsWith("Balance")) { // Команда запроса баланса
-      addTask(getSendSMSTaskString(msgphone, "Balance: " + String(balance) + " grn.")); // Добавляем задачу об отправке SMS с балансом
-      //addTask("getBalance"); // Добавляем задачу о запросе баланса
+      addTask(getSendSMSTaskString(msgphone, "Balance: " + (String)balance + " grn.")); // Добавляем задачу об отправке SMS с балансом
+      addTask("getBalance"); // Добавляем задачу о запросе баланса
       showAllTasks(); // Выводим все задачи
+      //DEBUG_PRINTLN((String)balance);
     } else if (msgbody.startsWith("Callme")) { // Команда осуществить исходящий вызов
       sendATCommand("ATD" + msgphone + ";", true);
     } else if (msgbody.startsWith("Help")) { // Команда получения помощи по командам
